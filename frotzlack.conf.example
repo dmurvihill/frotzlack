@@ -1,0 +1,11 @@
+[frotz]
+path=frotz-2.44/dfrotz
+story=ZORKI
+
+[slack]
+api_token=
+bot_username=zork
+
+[frotzlack]
+logs_dir=log
+admins=dimwit.flathead
