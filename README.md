@@ -9,7 +9,8 @@ majority of their time playing Zork.
 2. Rename frotzlack.conf.example to frotzlack.conf, and add your Slackbot's
   API token and username. Consider editing the admin username as well.
 3. `vagrant up`
-Now add the bot to a channel and say '@zork play' (if your bot's name is
+
+Now add the bot to a channel, say '@zork play' (if your bot's name is
 'zork'), and watch the magic unfold.
 
 ## Known Issues
