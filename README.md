@@ -21,4 +21,11 @@ Now add the bot to a channel and say '@zork play' (if your bot's name is
   around the web without any file integrity or version checking.
 
 ## Contributing
-Open a pull request, and follow PEP-8.
+This package is maintained by Dolan Murvihill in Cambridge, MA. He can be
+reached at \[first initial\]\[last name\] at GMail.
+
+To get your change merged:
+
+* write unit tests
+* follow PEP-8
+* open a pull request

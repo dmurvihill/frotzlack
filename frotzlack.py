@@ -1,10 +1,11 @@
 import logging
 import os
+import re
 from ConfigParser import ConfigParser
 from logging.handlers import RotatingFileHandler
 from multiprocessing.pool import ThreadPool
 from Queue import Queue
-from threading import Thread
+from threading import Thread, Lock
 
 import pexpect
 from slacksocket import SlackSocket
@@ -146,19 +147,55 @@ class FrotzSession(object):
     """
     Provides an interface to communicate with a Frotz process.
     """
+    class FrotzError(Exception):
+        pass
+    save_name_regex = re.compile("Please enter a filename \[.*\]:")
+    save_confirm_regex = re.compile("Ok\.")
+    save_override_prompt_regex = re.compile("Overwrite existing file\?")
+
     def __init__(self, frotz_binary, story_file, logger):
         self._frotz_process = \
             pexpect.spawn(' '.join([frotz_binary, story_file]))
+        self._frotz_lock = Lock()
         self._logger = logger
 
     def send(self, msg):
-        self._logger.info('<<<\t' + msg)
-        self._frotz_process.sendline(msg)
+        self._frotz_lock.acquire()
+        try:
+            self._logger.info('<<<\t' + msg)
+            self._frotz_process.sendline(msg)
+        finally:
+            self._frotz_lock.release()
 
     def recv(self):
-        msg = self._frotz_process.readline().rstrip()
-        self._logger.info('>>>\t' + msg)
-        return msg
+        self._frotz_lock.acquire()
+        try:
+            msg = self._frotz_process.readline().rstrip()
+            self._logger.info('>>>\t' + msg)
+            return msg
+        finally:
+            self._frotz_lock.release()
+
+    def save(self, path):
+        self._frotz_lock.acquire()
+        try:
+            self._frotz_process.sendline("save")
+
+            # Enter file name
+            self._expect_line([FrotzSession.save_name_regex])
+            self._frotz_process.sendline(path)
+
+            # Overwrite prompt or success message
+            (matched_pattern, match) = self._expect_line([
+                FrotzSession.save_confirm_regex,
+                FrotzSession.save_override_prompt_regex])
+
+            # If it was an overwrite, confirm
+            if matched_pattern is FrotzSession.save_override_prompt_regex:
+                self._frotz_process.sendline("yes")
+                self._expect_line([FrotzSession.save_confirm_regex])
+        finally:
+            self._frotz_lock.release()
 
     def kill(self):
         self._frotz_process.close(force=True)
@@ -166,6 +203,27 @@ class FrotzSession(object):
 
     def notify_crash(self, exception):
         self._logger.exception(exception.message)
+
+    def _expect_line(self, expected_patterns):
+        actual_line = self._frotz_process.readline().rstrip()
+        matched_regex = None
+        match = None
+
+        for regex in expected_patterns:
+            if match is None:
+                matched_regex = regex
+                match = regex.match(actual_line)
+
+        if match is None:
+            message = "Unexpected line from Frotz: \"{0}\".\n" \
+                      "Expected lines:\n\t{1}"
+            expected_lines_patterns = map(lambda x: x.pattern,
+                                          expected_patterns)
+            expected_lines_string = "\n\t".join(expected_lines_patterns)
+            message = message.format(actual_line, expected_lines_string)
+            raise(FrotzSession.FrotzError(message))
+
+        return matched_regex, match
 
 
 class Session(object):
@@ -218,4 +276,5 @@ def main():
     config.read('frotzlack.conf')
     GameMaster(config)
 
-main()
+if __name__ == "__main__":
+    main()
