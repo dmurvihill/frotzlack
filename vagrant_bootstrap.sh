@@ -11,12 +11,7 @@ apt-get install -y curl git make libffi-dev libssl-dev python python-dev python-
 pip install --upgrade setuptools
 virtualenv -p python2.7 venv
 source venv/bin/activate
-
-git clone -b im_create https://github.com/dmurvihill/slacksocket /home/vagrant/slacksocket
-chown -R vagrant:vagrant slacksocket
-
 pip install -q -r requirements.txt
-pip install /home/vagrant/slacksocket
 
 #  Install Frotz/Zork
 wget -q https://github.com/DavidGriffith/frotz/archive/2.44.tar.gz
