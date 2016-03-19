@@ -11,6 +11,8 @@ import pexpect
 from slacksocket import SlackSocket
 
 
+LOAD_NOT_IMPL_MSG = "Sorry, loading is not implemented yet."
+QUIT_NOT_IMPL_MSG = "Sorry, quitting is not implemented yet."
 SERVER_SHUTDOWN_MSG = "Sorry, the server is shutting down now."
 SAVE_SUCCESS_MSG = "I saved your game, but I won't be able to load it."
 SAVE_FAILURE_MSG = "Sorry, something went wrong and I wasn't able to save your game."
@@ -250,7 +252,11 @@ class Session(object):
         self._output_handler.start()
 
     def notify_input(self, game_input):
-        if game_input == 'save':
+        if game_input == 'load':
+            self._slack_session.send(LOAD_NOT_IMPL_MSG)
+        elif game_input == 'quit':
+            self._slack_session.send(QUIT_NOT_IMPL_MSG)
+        elif game_input == 'save':
             try:
                 self._frotz_session.save(self._save_path)
                 self._slack_session.send(SAVE_SUCCESS_MSG)

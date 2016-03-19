@@ -87,6 +87,39 @@ def test_game_input_save_failure():
         session.kill()
 
 
+def test_game_input_load():
+    """
+    Upon receiving a load command, the server politely refuses.
+    """
+    slack_session = Mock()
+
+    session = Session(slack_session, Mock(), 'zork.sav')
+    try:
+        session.notify_input('load')
+
+        expected_slack_call = ('send', (frotzlack.LOAD_NOT_IMPL_MSG,))
+        assert expected_slack_call in slack_session.method_calls
+
+    finally:
+        session.kill()
+
+
+def test_game_input_quit():
+    """
+    Upon receiving a quit command, the server politely refuses.
+    """
+    slack_session = Mock()
+
+    session = Session(slack_session, Mock(), 'zork.sav')
+    try:
+        session.notify_input('quit')
+
+        expected_slack_call = ('send', (frotzlack.QUIT_NOT_IMPL_MSG,))
+        assert expected_slack_call in slack_session.method_calls
+
+    finally:
+        session.kill()
+
 def test_say():
     """
     The Session say() command calls the SlackSession send() command
