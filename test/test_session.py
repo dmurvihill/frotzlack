@@ -2,7 +2,6 @@ from mock import Mock
 
 import frotzlack
 from frotzlack import Session
-import time
 
 
 def test_save(monkeypatch):
@@ -61,6 +60,34 @@ def test_game_input_passthrough():
 
     finally:
         session.kill()
+
+
+def test_game_input_save():
+    """
+    Upon receiving a save command, the session calls the Frotz session's
+    save method
+    """
+    frotz_session_1 = Mock()
+    frotz_session_2 = Mock()
+    slack_session = Mock()
+    session1 = Session(slack_session, frotz_session_1, "zork.sav")
+    session2 = Session(slack_session, frotz_session_2, "zork2.sav")
+
+    try:
+        session1.notify_input("save")
+        session2.notify_input("save")
+        expected_slack_call = ("send", (frotzlack.SAVE_SUCCESS_MSG,))
+        expected_frotz1_call = ("save", ("zork.sav",))
+        expected_frotz2_call = ("save", ("zork2.sav",))
+        unexpected_frotz_call = ("send", ("save",))
+        assert expected_frotz1_call in frotz_session_1.method_calls
+        assert expected_frotz2_call in frotz_session_2.method_calls
+        assert expected_slack_call in slack_session.method_calls
+        assert unexpected_frotz_call not in frotz_session_1.method_calls
+
+    finally:
+        session1.kill()
+        session2.kill()
 
 
 def test_say():
