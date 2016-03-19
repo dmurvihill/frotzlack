@@ -248,9 +248,6 @@ class Session(object):
         self._input_handler.start()
         self._output_handler.start()
 
-    def save(self):
-        self._frotz_session.save(self._save_path)
-
     def notify_input(self, game_input):
         if game_input == 'save':
             self._frotz_session.save(self._save_path)
