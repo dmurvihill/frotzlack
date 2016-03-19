@@ -85,7 +85,7 @@ class GameMaster(object):
                                      self._frotz_story_file,
                                      session_logger)
         self._slack_sessions[username] = slack_session
-        Session(slack_session, frotz_session)
+        Session(slack_session, frotz_session, username)
 
     def _reject_command(self, username, command):
         channel = self._slack.get_im_channel(username)
@@ -231,16 +231,20 @@ class Session(object):
     Handles communication between a Slack user and a corresponding
     Frotz process.
     """
-    def __init__(self, slack_session, frotz_session):
+    def __init__(self, slack_session, frotz_session, save_path):
         self._stop_requested = False
         self._slack_session = slack_session
         self._frotz_session = frotz_session
+        self._save_path = save_path
         self._input_handler = Thread(target=self._handle_input,
                                      name="input_handler")
         self._output_handler = Thread(target=self._handle_output,
                                       name="output_handler")
         self._input_handler.start()
         self._output_handler.start()
+
+    def save(self):
+        self._frotz_session.save(self._save_path)
 
     def kill(self):
         self._stop_requested = True
@@ -269,6 +273,8 @@ class Session(object):
                 self._slack_session.send(frotz_out)
             except pexpect.TIMEOUT:
                 continue
+            except Exception as e:
+                self.crash(e)
 
 
 def main():
