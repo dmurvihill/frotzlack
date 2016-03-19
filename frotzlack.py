@@ -11,6 +11,7 @@ import pexpect
 from slacksocket import SlackSocket
 
 
+CRASH_MSG = "Sorry, I seem to have crashed."
 LOAD_NOT_IMPL_MSG = "Sorry, loading is not implemented yet."
 QUIT_NOT_IMPL_MSG = "Sorry, quitting is not implemented yet."
 SERVER_SHUTDOWN_MSG = "Sorry, the server is shutting down now."
@@ -147,9 +148,6 @@ class SlackSession(object):
     def recv(self):
         return self._messages.get()
 
-    def notify_crash(self):
-        self._send_msg("Sorry, I seem to have crashed.")
-
 
 class FrotzSession(object):
     """
@@ -265,8 +263,8 @@ class Session(object):
         else:
             self._frotz_session.send(game_input)
 
-    def kill(self):
-        self._slack_session.send(SERVER_SHUTDOWN_MSG)
+    def kill(self, message=SERVER_SHUTDOWN_MSG):
+        self._slack_session.send(message)
         self._stop_requested = True
         self._output_handler.join()
         self._input_handler.join()
@@ -274,9 +272,8 @@ class Session(object):
         self._frotz_session.kill()
 
     def crash(self, exception):
-        self._slack_session.notify_crash()
         self._frotz_session.notify_crash(exception)
-        self.kill()
+        self.kill(message=CRASH_MSG)
 
     def _handle_input(self):
         while not self._stop_requested:

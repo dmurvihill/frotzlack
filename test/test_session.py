@@ -119,3 +119,24 @@ def test_game_input_quit():
 
     finally:
         session.kill()
+
+def test_crash():
+    """
+    The "crash" method logs the exception and then shuts down with a
+    message about the crash.
+    """
+    slack_session = Mock()
+    frotz_session = Mock()
+    exception = Exception()
+
+    session = Session(slack_session, frotz_session, 'zork.sav')
+    try:
+        session.crash(exception)
+
+        expected_frotz_call = ('notify_crash', (exception,))
+        expected_slack_call = ('send', (frotzlack.CRASH_MSG,))
+        assert expected_slack_call in slack_session.method_calls
+        assert expected_frotz_call in frotz_session.method_calls
+
+    finally:
+        session.kill()
