@@ -119,22 +119,3 @@ def test_game_input_quit():
 
     finally:
         session.kill()
-
-def test_say():
-    """
-    The Session say() command calls the SlackSession send() command
-    """
-    slack_session = Mock()
-    session = Session(slack_session, Mock(), "zork.sav")
-
-    try:
-        session.say("test1")
-        session.say("test2")
-
-        expected_calls = [('send', ('test1',)), ('send', ('test2',))]
-        actual_calls = slack_session.method_calls
-
-        assert all(call in actual_calls for call in expected_calls)
-
-    finally:
-        session.kill()

@@ -265,9 +265,6 @@ class Session(object):
         else:
             self._frotz_session.send(game_input)
 
-    def say(self, msg):
-        self._slack_session.send(msg)
-
     def kill(self):
         self._slack_session.send(SERVER_SHUTDOWN_MSG)
         self._stop_requested = True
