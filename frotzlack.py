@@ -11,6 +11,9 @@ import pexpect
 from slacksocket import SlackSocket
 
 
+SERVER_SHUTDOWN_MSG = 'Sorry, the server is shutting down now.'
+
+
 class GameMaster(object):
     """
     Manages user sessions.
@@ -250,6 +253,7 @@ class Session(object):
         self._slack_session.send(msg)
 
     def kill(self):
+        self._slack_session.send(SERVER_SHUTDOWN_MSG)
         self._stop_requested = True
         self._output_handler.join()
         self._input_handler.join()

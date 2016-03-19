@@ -1,5 +1,8 @@
-from frotzlack import Session
 from mock import Mock
+
+import frotzlack
+from frotzlack import Session
+
 
 def test_save(monkeypatch):
     """
@@ -22,6 +25,21 @@ def test_save(monkeypatch):
 
     finally:
         session.kill()
+
+
+def test_kill():
+    """
+    When killed, the session politely notifies the user that the
+    session is stopping and then kills the Slack and Frotz sessions.
+    """
+    slack_session = Mock()
+    frotz_session = Mock()
+    session = Session(slack_session, frotz_session, "zork.sav")
+    session.kill()
+
+    expected_slack_send_call = ('send', (frotzlack.SERVER_SHUTDOWN_MSG,))
+    assert expected_slack_send_call in slack_session.method_calls
+    assert frotz_session.kill.called
 
 
 def test_say():
