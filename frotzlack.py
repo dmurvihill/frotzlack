@@ -24,7 +24,7 @@ class GameMaster(object):
         self._slack_username = config.get('slack', 'bot_username')
         self._slack = SlackSocket(slack_api_token, translate=True)
         self._slack_events = self._slack.events()
-        self._slack_sessions = {}
+        self._sessions = {}
         self._slack_event_handler = Thread(target=self._handle_slack_events,
                                            name='event_handler')
 
@@ -44,11 +44,22 @@ class GameMaster(object):
         self._stop_requested = False
         self._slack_event_handler.start()
 
+    def stop_server(self):
+        pool = ThreadPool()
+        for session in self._sessions.values():
+            def polite_stop():
+                session.say("Sorry, the server is shutting down now.")
+                session.kill()
+            pool.apply_async(polite_stop)
+        pool.close()
+        pool.join()
+        self._stop_requested = True
+
     def _event_is_game_input(self, event):
         event_attrs = event.event
         is_game_input = 'type' in event_attrs.keys() and \
             event_attrs['type'] == 'message' and \
-            event_attrs['user'] in self._slack_sessions and \
+            event_attrs['user'] in self._sessions and \
             event_attrs['user'] != self._slack_username and \
             self._slack_username not in event.mentions and \
             event_attrs['channel'] == event_attrs['user']
@@ -62,10 +73,11 @@ class GameMaster(object):
 
     def _handle_game_input(self, user, game_input):
         session = self._slack_sessions[user]
-        if game_input.strip() == 'save' or game_input.strip() == 'load':
-            session.send("Sorry, I can't save or load games yet.")
+        if game_input.strip() == 'save':
+            session.save()
+            session.say("I saved your game, but I won't be able to load it.")
         elif game_input.strip() == 'quit':
-            session.send("Sorry, I can't quit the game yet.")
+            session.say("Sorry, I can't quit the game yet.")
         else:
             session.put(game_input)
 
@@ -95,17 +107,6 @@ class GameMaster(object):
         message = "Sorry, I don't recognize the command `{0}`"
         self._slack.send_msg(message.format(command), channel_id=channel['id'])
 
-    def _stop_server(self):
-        pool = ThreadPool()
-        for session in self._slack_sessions.values():
-            def polite_stop():
-                session.send("Sorry, the server is shutting down now.")
-                session.kill()
-            pool.apply_async(polite_stop)
-        pool.close()
-        pool.join()
-        self._stop_requested = True
-
     def _handle_slack_events(self):
         while not self._stop_requested:
             event = self._slack_events.next()
@@ -117,7 +118,7 @@ class GameMaster(object):
                 command = event_attrs['text']
                 user = event_attrs['user']
                 if 'stop' in command and user in self._admins:
-                    self._stop_server()
+                    self.stop_server()
                 elif 'play' in command:
                     self._start_session(user)
                 else:
@@ -248,6 +249,9 @@ class Session(object):
 
     def save(self):
         self._frotz_session.save(self._save_path)
+
+    def notify_input(self, game_input):
+        self._frotz_session.send(game_input)
 
     def say(self, msg):
         self._slack_session.send(msg)
