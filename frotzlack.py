@@ -246,6 +246,9 @@ class Session(object):
     def save(self):
         self._frotz_session.save(self._save_path)
 
+    def say(self, msg):
+        self._slack_session.send(msg)
+
     def kill(self):
         self._stop_requested = True
         self._output_handler.join()
