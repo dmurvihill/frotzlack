@@ -42,13 +42,13 @@ def test_game_input_passthrough():
 def test_game_input_save():
     """
     Upon receiving a save command, the session calls the Frotz session's
-    save method
+    save method.
     """
     frotz_session_1 = Mock()
     frotz_session_2 = Mock()
     slack_session = Mock()
     session1 = Session(slack_session, frotz_session_1, "zork.sav")
-    session2 = Session(slack_session, frotz_session_2, "zork2.sav")
+    session2 = Session(Mock(), frotz_session_2, "zork2.sav")
 
     try:
         session1.notify_input("save")
@@ -65,6 +65,26 @@ def test_game_input_save():
     finally:
         session1.kill()
         session2.kill()
+
+
+def test_game_input_save_failure():
+    """
+    When the Frotz session fails to save, the session notifies the user
+    with a friendly error message.
+    """
+    frotz_session = Mock()
+    slack_session = Mock()
+    frotz_session.save.side_effect = Exception("Test exception")
+
+    session = Session(slack_session, frotz_session, 'zork.sav')
+    try:
+        session.notify_input('save')
+
+        expected_slack_call = ('send', (frotzlack.SAVE_FAILURE_MSG,))
+        assert expected_slack_call in slack_session.method_calls
+
+    finally:
+        session.kill()
 
 
 def test_say():

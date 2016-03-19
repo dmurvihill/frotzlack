@@ -13,6 +13,7 @@ from slacksocket import SlackSocket
 
 SERVER_SHUTDOWN_MSG = "Sorry, the server is shutting down now."
 SAVE_SUCCESS_MSG = "I saved your game, but I won't be able to load it."
+SAVE_FAILURE_MSG = "Sorry, something went wrong and I wasn't able to save your game."
 
 
 class GameMaster(object):
@@ -250,8 +251,11 @@ class Session(object):
 
     def notify_input(self, game_input):
         if game_input == 'save':
-            self._frotz_session.save(self._save_path)
-            self._slack_session.send(SAVE_SUCCESS_MSG)
+            try:
+                self._frotz_session.save(self._save_path)
+                self._slack_session.send(SAVE_SUCCESS_MSG)
+            except Exception as e:
+                self._slack_session.send(SAVE_FAILURE_MSG)
         else:
             self._frotz_session.send(game_input)
 
