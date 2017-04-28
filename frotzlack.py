@@ -85,7 +85,6 @@ class GameMaster(object):
                self._slack_username in event.mentions
 
     def _handle_game_input(self, user, game_input):
-        print('handling game input {}'.format(game_input))
         session = self._sessions[user]
         if game_input.strip() == 'save':
             try:
@@ -235,7 +234,6 @@ class FrotzSession(object):
 
     def _send_loop(self):
         while not self._stop_requested:
-            print('FrotzSession._send_loop')
             try:
                 msg = self._send_queue.get(block=False)
             except Empty:
@@ -248,7 +246,6 @@ class FrotzSession(object):
 
     def _recv_loop(self):
         while not self._stop_requested:
-            print('FrotzSession._recv_loop')
             with self._frotz_lock:
                 try:
                     frotz_line = self._frotz_process.readline()
@@ -301,7 +298,6 @@ class Session(object):
 
     def _handle_input(self):
         while not self._stop_requested:
-            print('Session._handle_input')
             try:
                 frotz_in = self._slack_session.recv()
                 self._frotz_session.send(frotz_in)
@@ -313,7 +309,6 @@ class Session(object):
 
     def _handle_output(self):
         while not self._stop_requested:
-            print('Session._handle_output')
             try:
                 frotz_out = self._frotz_session.recv(block=False)
                 self._slack_session.send(frotz_out)
