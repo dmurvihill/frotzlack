@@ -45,6 +45,7 @@ class GameMaster(object):
 
         #  Other config
         self._admins = config.get('frotzlack', 'admins').split(',')
+        self._save_dir = config.get('frotzlack', 'save_dir')
 
         self._stop_requested = False
         self._slack_event_handler.start()
@@ -64,6 +65,7 @@ class GameMaster(object):
         event_attrs = event.event
         is_game_input = 'type' in event_attrs.keys() and \
             event_attrs['type'] == 'message' and \
+            'user' in event_attrs and \
             event_attrs['user'] in self._sessions and \
             event_attrs['user'] != self._slack_username and \
             self._slack_username not in event.mentions and \
@@ -77,10 +79,17 @@ class GameMaster(object):
                self._slack_username in event.mentions
 
     def _handle_game_input(self, user, game_input):
-        session = self._slack_sessions[user]
+        print('handling game input {}'.format(game_input))
+        session = self._sessions[user]
         if game_input.strip() == 'save':
-            session.save()
-            session.say("I saved your game, but I won't be able to load it.")
+            try:
+                session.save()
+            except IOError as e:
+                session.say("Save failed! {}".format(e.message))
+            else:
+                session.say("I saved your game, but I won't be able to load it.")
+        elif game_input.strip() == 'restore':
+            session.say("Sorry, I can't load games yet.")
         elif game_input.strip() == 'quit':
             session.say("Sorry, I can't quit the game yet.")
         else:
@@ -100,12 +109,15 @@ class GameMaster(object):
         session_logger.addHandler(session_handler)
         session_logger.addHandler(self._global_handler)
 
-        slack_session = SlackSession(send_msg, channel_id)
-        frotz_session = FrotzSession(self._frotz_binary,
-                                     self._frotz_story_file,
-                                     session_logger)
-        self._slack_sessions[username] = slack_session
-        Session(slack_session, frotz_session, username)
+        save_path = os.path.join(self._save_dir, username)
+        if os.path.relpath(save_path).startswith(self._save_dir):
+            slack_session = SlackSession(send_msg, channel_id)
+            frotz_session = FrotzSession(self._frotz_binary,
+                                         self._frotz_story_file,
+                                         session_logger)
+            self._sessions[username] = Session(slack_session,
+                                               frotz_session,
+                                               save_path)
 
     def _reject_command(self, username, command):
         channel = self._slack.get_im_channel(username)
@@ -143,10 +155,13 @@ class SlackSession(object):
         self._messages.put(msg)
 
     def send(self, msg):
+        print('SlackSession.send "{}"'.format(msg))
         self._send_msg(msg)
 
     def recv(self):
-        return self._messages.get()
+        msg = self._messages.get()
+        print('SlackSession.rcv "{}"'.format(msg))
+        return msg
 
 
 class FrotzSession(object):
@@ -161,12 +176,13 @@ class FrotzSession(object):
 
     def __init__(self, frotz_binary, story_file, logger):
         self._frotz_process = \
-            pexpect.spawn(' '.join([frotz_binary, story_file]))
+            pexpect.spawn(' '.join([frotz_binary, story_file]), timeout=0.5)
         self._frotz_lock = Lock()
         self._logger = logger
 
     def send(self, msg):
-        self._frotz_lock.acquire()
+        print('FrotzSession.send "{}"'.format(msg))
+        self._frotz_lock.acquire()  # TODO fix insanely long wait for this lock
         try:
             self._logger.info('<<<\t' + msg)
             self._frotz_process.sendline(msg)
@@ -177,6 +193,7 @@ class FrotzSession(object):
         self._frotz_lock.acquire()
         try:
             msg = self._frotz_process.readline().rstrip()
+            print("FrotzSession.recv '{}'".format(msg))
             self._logger.info('>>>\t' + msg)
             return msg
         finally:
@@ -186,20 +203,22 @@ class FrotzSession(object):
         self._frotz_lock.acquire()
         try:
             self._frotz_process.sendline("save")
+            self._frotz_process.expect(">save\r\n")
 
             # Enter file name
-            self._expect_line([FrotzSession.save_name_regex])
+            self._frotz_process.expect(FrotzSession.save_name_regex)
             self._frotz_process.sendline(path)
 
             # Overwrite prompt or success message
-            (matched_pattern, match) = self._expect_line([
+            match_index = self._frotz_process.expect([
                 FrotzSession.save_confirm_regex,
                 FrotzSession.save_override_prompt_regex])
 
             # If it was an overwrite, confirm
-            if matched_pattern is FrotzSession.save_override_prompt_regex:
+            if match_index == 1:
                 self._frotz_process.sendline("yes")
-                self._expect_line([FrotzSession.save_confirm_regex])
+                self._frotz_process.expect(FrotzSession.save_confirm_regex)
+
         finally:
             self._frotz_lock.release()
 
@@ -209,27 +228,6 @@ class FrotzSession(object):
 
     def notify_crash(self, exception):
         self._logger.exception(exception.message)
-
-    def _expect_line(self, expected_patterns):
-        actual_line = self._frotz_process.readline().rstrip()
-        matched_regex = None
-        match = None
-
-        for regex in expected_patterns:
-            if match is None:
-                matched_regex = regex
-                match = regex.match(actual_line)
-
-        if match is None:
-            message = "Unexpected line from Frotz: \"{0}\".\n" \
-                      "Expected lines:\n\t{1}"
-            expected_lines_patterns = map(lambda x: x.pattern,
-                                          expected_patterns)
-            expected_lines_string = "\n\t".join(expected_lines_patterns)
-            message = message.format(actual_line, expected_lines_string)
-            raise(FrotzSession.FrotzError(message))
-
-        return matched_regex, match
 
 
 class Session(object):
@@ -274,6 +272,15 @@ class Session(object):
     def crash(self, exception):
         self._frotz_session.notify_crash(exception)
         self.kill(message=CRASH_MSG)
+
+    def save(self):
+        self._frotz_session.save(self._save_path)
+
+    def say(self, message):
+        self._slack_session.send(message)
+
+    def put(self, message):
+        self._slack_session.put(message)
 
     def _handle_input(self):
         while not self._stop_requested:
