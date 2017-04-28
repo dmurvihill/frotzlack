@@ -98,6 +98,7 @@ class GameMaster(object):
         elif game_input.strip() == 'quit':
             session.say("Sorry, I can't quit the game yet.")
         else:
+            print("{} putting input to Slack queue '{}'".format(time.time(), game_input))
             session.put(game_input)
 
     def _start_session(self, username):
@@ -248,11 +249,14 @@ class FrotzSession(object):
         while not self._stop_requested:
             with self._frotz_lock:
                 try:
+                    print('waiting for Frotz...')
                     frotz_line = self._frotz_process.readline()
                 except pexpect.TIMEOUT:
+                    print('Got nothing.')
                     pass
                 else:
                     msg = frotz_line.rstrip()
+                    print('{} Got \'{}\''.format(time.time(), msg))
                     self._logger.info('>>>\t' + msg)
                     self._recv_queue.put(msg)
             time.sleep(0)
@@ -300,6 +304,7 @@ class Session(object):
         while not self._stop_requested:
             try:
                 frotz_in = self._slack_session.recv()
+                print('{} Sending message \'{}\' to Frotz'.format(time.time(), frotz_in))
                 self._frotz_session.send(frotz_in)
             except Empty:
                 pass
@@ -311,6 +316,7 @@ class Session(object):
         while not self._stop_requested:
             try:
                 frotz_out = self._frotz_session.recv(block=False)
+                print('{} received message \'{}\' from Frotz'.format(time.time(), frotz_out))
                 self._slack_session.send(frotz_out)
             except Empty:
                 pass
