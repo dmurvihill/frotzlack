@@ -1,10 +1,11 @@
 import logging
 import os
 import re
+import time
 from ConfigParser import ConfigParser
 from logging.handlers import RotatingFileHandler
 from multiprocessing.pool import ThreadPool
-from Queue import Queue
+from Queue import Empty, Queue
 from threading import Thread, Lock
 
 import pexpect
@@ -60,6 +61,11 @@ class GameMaster(object):
         pool.close()
         pool.join()
         self._stop_requested = True
+
+    def join(self):
+        for session in self._sessions.values():
+            session.join()
+        self._slack_event_handler.join()
 
     def _event_is_game_input(self, event):
         event_attrs = event.event
@@ -137,7 +143,8 @@ class GameMaster(object):
                 if 'stop' in command and user in self._admins:
                     self.stop_server()
                 elif 'play' in command:
-                    self._start_session(user)
+                    if user not in self._sessions:
+                        self._start_session(user)
                 else:
                     self._reject_command(event_attrs['user'], command)
 
@@ -155,12 +162,10 @@ class SlackSession(object):
         self._messages.put(msg)
 
     def send(self, msg):
-        print('SlackSession.send "{}"'.format(msg))
         self._send_msg(msg)
 
     def recv(self):
-        msg = self._messages.get()
-        print('SlackSession.rcv "{}"'.format(msg))
+        msg = self._messages.get(block=False)
         return msg
 
 
@@ -170,38 +175,32 @@ class FrotzSession(object):
     """
     class FrotzError(Exception):
         pass
+
     save_name_regex = re.compile("Please enter a filename \[.*\]:")
     save_confirm_regex = re.compile("Ok\.")
     save_override_prompt_regex = re.compile("Overwrite existing file\?")
 
     def __init__(self, frotz_binary, story_file, logger):
-        self._frotz_process = \
-            pexpect.spawn(' '.join([frotz_binary, story_file]), timeout=0.5)
         self._frotz_lock = Lock()
+        self._send_queue = Queue()
+        self._recv_queue = Queue()
+        self._stop_requested = False
+        self._thread_pool = ThreadPool()
+        with self._frotz_lock:
+            self._frotz_process = pexpect.spawn(
+                ' '.join([frotz_binary, story_file]), timeout=1)
+        self._thread_pool.apply_async(self._send_loop)
+        self._thread_pool.apply_async(self._recv_loop)
         self._logger = logger
 
     def send(self, msg):
-        print('FrotzSession.send "{}"'.format(msg))
-        self._frotz_lock.acquire()  # TODO fix insanely long wait for this lock
-        try:
-            self._logger.info('<<<\t' + msg)
-            self._frotz_process.sendline(msg)
-        finally:
-            self._frotz_lock.release()
+        self._send_queue.put(msg)
 
-    def recv(self):
-        self._frotz_lock.acquire()
-        try:
-            msg = self._frotz_process.readline().rstrip()
-            print("FrotzSession.recv '{}'".format(msg))
-            self._logger.info('>>>\t' + msg)
-            return msg
-        finally:
-            self._frotz_lock.release()
+    def recv(self, *args, **kwargs):
+        return self._recv_queue.get(*args, **kwargs)
 
     def save(self, path):
-        self._frotz_lock.acquire()
-        try:
+        with self._frotz_lock:
             self._frotz_process.sendline("save")
             self._frotz_process.expect(">save\r\n")
 
@@ -219,15 +218,47 @@ class FrotzSession(object):
                 self._frotz_process.sendline("yes")
                 self._frotz_process.expect(FrotzSession.save_confirm_regex)
 
-        finally:
-            self._frotz_lock.release()
+    def stop(self):
+        self._stop_requested = True
+
+    def join(self):
+        self._thread_pool.join()
 
     def kill(self):
+        self.stop()
+        self.join()
         self._frotz_process.close(force=True)
         self._logger.info('[terminated]')
 
     def notify_crash(self, exception):
         self._logger.exception(exception.message)
+
+    def _send_loop(self):
+        while not self._stop_requested:
+            print('FrotzSession._send_loop')
+            try:
+                msg = self._send_queue.get(block=False)
+            except Empty:
+                pass
+            else:
+                with self._frotz_lock:
+                    self._logger.info('<<<\t' + msg)
+                    self._frotz_process.sendline(msg)
+            time.sleep(0)
+
+    def _recv_loop(self):
+        while not self._stop_requested:
+            print('FrotzSession._recv_loop')
+            with self._frotz_lock:
+                try:
+                    frotz_line = self._frotz_process.readline()
+                except pexpect.TIMEOUT:
+                    pass
+                else:
+                    msg = frotz_line.rstrip()
+                    self._logger.info('>>>\t' + msg)
+                    self._recv_queue.put(msg)
+            time.sleep(0)
 
 
 class Session(object):
@@ -246,20 +277,6 @@ class Session(object):
                                       name="output_handler")
         self._input_handler.start()
         self._output_handler.start()
-
-    def notify_input(self, game_input):
-        if game_input == 'load':
-            self._slack_session.send(LOAD_NOT_IMPL_MSG)
-        elif game_input == 'quit':
-            self._slack_session.send(QUIT_NOT_IMPL_MSG)
-        elif game_input == 'save':
-            try:
-                self._frotz_session.save(self._save_path)
-                self._slack_session.send(SAVE_SUCCESS_MSG)
-            except Exception as e:
-                self._slack_session.send(SAVE_FAILURE_MSG)
-        else:
-            self._frotz_session.send(game_input)
 
     def kill(self, message=SERVER_SHUTDOWN_MSG):
         self._slack_session.send(message)
@@ -284,27 +301,33 @@ class Session(object):
 
     def _handle_input(self):
         while not self._stop_requested:
+            print('Session._handle_input')
             try:
                 frotz_in = self._slack_session.recv()
                 self._frotz_session.send(frotz_in)
+            except Empty:
+                pass
             except Exception as e:
                 self.crash(e)
+            time.sleep(0)
 
     def _handle_output(self):
         while not self._stop_requested:
+            print('Session._handle_output')
             try:
-                frotz_out = self._frotz_session.recv()
+                frotz_out = self._frotz_session.recv(block=False)
                 self._slack_session.send(frotz_out)
-            except pexpect.TIMEOUT:
-                continue
+            except Empty:
+                pass
             except Exception as e:
                 self.crash(e)
-
+            time.sleep(0)
 
 def main():
     config = ConfigParser()
     config.read('frotzlack.conf')
-    GameMaster(config)
+    gm = GameMaster(config)
+    gm.join()
 
 if __name__ == "__main__":
     main()

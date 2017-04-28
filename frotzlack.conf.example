@@ -8,4 +8,5 @@ bot_username=zork
 
 [frotzlack]
 logs_dir=log
+save_dir=save
 admins=dimwit.flathead
